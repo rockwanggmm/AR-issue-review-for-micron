@@ -1,7 +1,21 @@
+import os
+import sys
+
+# ==========================================
+# 🚀 雲端環境自適應：自動檢查並安裝缺失的套件
+# ==========================================
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+except ModuleNotFoundError:
+    # 發現缺少 plotly，自動調用作業系統內建的 pip 進行背景安裝
+    os.system(f"{sys.executable} -m pip install plotly")
+    # 安裝完成後重新載入
+    import plotly.express as px
+    import plotly.graph_objects as go
+
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
 
 # 1. 網頁基礎設定 (寬螢幕模式與科技感主題)
@@ -51,7 +65,6 @@ def process_uploaded_data(file):
     df = pd.read_csv(file)
     
     # 【欄位防錯與標準化機制】
-    # 確保基本必要欄位存在，若名稱略有不同可在此對齊
     rename_dict = {
         '主題': 'Summary', '問題摘要': 'Summary',
         '狀態': 'Status',
@@ -87,7 +100,7 @@ def process_uploaded_data(file):
     
     df['議題分類'] = df['Summary'].apply(classify_tag)
     
-    # 風險監控自動 Highlight 邏輯 (基準日設為最新 Updated 時間或當前時間)
+    # 風險監控自動 Highlight 邏輯
     base_date = df['Updated'].max() if df['Updated'].notnull().any() else datetime.now()
     
     def detect_risk(row):
@@ -106,10 +119,9 @@ def process_uploaded_data(file):
 # 4. 主畫面控制流：判斷是否有檔案上傳
 if uploaded_file is not None:
     try:
-        # 解析動態上傳的檔案
         df, data_base_date = process_uploaded_data(uploaded_file)
         
-        # 側邊欄：動態動態篩選器 (根據上傳的檔案內容動態生成選單)
+        # 側邊欄：動態動態篩選器
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔍 步驟 2：篩選大盤資料")
         
@@ -222,21 +234,14 @@ if uploaded_file is not None:
         st.error(f"解析上傳的 CSV 檔案時出錯，請確認格式是否正確。錯誤訊息: {e}")
 
 else:
-    # 🌟 引導用戶上傳檔案的 Welcome Page 介面
+    # 引導用戶上傳檔案的 Welcome Page 介面
     st.title("🏭 美光機台異常議題追蹤與質量分析 Dashboard")
     st.markdown("---")
-    
-    # 使用 Streamlit 內建的 Info 提示框引導用戶
     st.info("👋 歡迎使用專案動態追蹤大盤！目前系統處於等待數據狀態。")
-    
     st.markdown("""
     ### 🚀 快速開始三步驟：
-    1. **準備檔案**：自 Jira 匯出您最新的議題清單 CSV 檔（例如先前使用的 `美光JIRA 2.csv`）。
+    1. **準備檔案**：自 Jira 匯出您最新的議題清單 CSV 檔。
     2. **拖曳上傳**：點擊左側邊欄的 **`Browse files`** 按鈕或直接將 CSV 檔案拖曳進去。
     3. **即時簡報**：系統將自動解析欄位，生成客製化的美光報告圖表與紅燈 Highlight 清單！
-    
-    *💡 提示：本工具完全在本地端（或您的專屬伺服器上）動態處理數據，不會對外儲存任何美光敏感機密資料，請安心使用。*
     """)
-    
-    # 放置一個精美佔位符，讓畫面不空洞
     st.image("https://img.icons8.com/clouds/400/000000/opened-folder.png", width=250)
