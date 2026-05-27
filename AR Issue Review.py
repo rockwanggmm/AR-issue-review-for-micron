@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 系統自訂樣式 CSS (用於網頁畫面上的排版美化)
+# 系統自訂樣式 CSS
 st.markdown("""
     <style>
     .highlight-red {
@@ -71,10 +71,10 @@ def process_uploaded_data(file):
     df['Updated'] = pd.to_datetime(df['Updated'], errors='coerce')
     df['Due date'] = pd.to_datetime(df['Due date'], errors='coerce')
     
-    # 【未解天數清洗】：將非數字欄位（如 'done', '無立案日期'）轉為數字 0
+    # 【未解天數清洗】
     df['未解天數'] = pd.to_numeric(df['未解天數'], errors='coerce').fillna(0).astype(int)
     
-    # 建立客戶關注標籤 (動態掃描 Summary 關鍵字)
+    # 建立客戶關注標籤
     def classify_tag(summary):
         s_str = str(summary)
         if any(keyword in s_str for keyword in ['Top 5', 'Top項目', '新 Top', '關鍵']):
@@ -83,7 +83,7 @@ def process_uploaded_data(file):
     
     df['議題分類'] = df['Summary'].apply(classify_tag)
     
-    # 風險監控自動 Highlight 邏輯 (以資料最新 Updated 時間為基準)
+    # 風險監控自動 Highlight 邏輯
     base_date = df['Updated'].max() if df['Updated'].notnull().any() else datetime.now()
     
     def detect_risk(row):
@@ -104,7 +104,7 @@ if uploaded_file is not None:
     try:
         df, data_base_date = process_uploaded_data(uploaded_file)
         
-        # 側邊欄：動態動態篩選器
+        # 側邊欄：動態篩選器
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔍 步驟 2：篩選大盤資料")
         
@@ -137,7 +137,6 @@ if uploaded_file is not None:
             top_count = len(filtered_df[filtered_df['議題分類'] == "🔥 Top 核心議題"])
             st.metric(label="🔥 客戶關注 Top 項目", value=top_count)
         with col3:
-            # 算平均天數時，只計算有未解天數（大於 0）的議題
             active_issues = filtered_df[filtered_df['未解天數'] > 0]
             avg_days = int(active_issues['未解天數'].mean()) if len(active_issues) > 0 else 0
             st.metric(label="⏳ 處理中議題平均未解天數", value=f"{avg_days} 天")
@@ -152,7 +151,6 @@ if uploaded_file is not None:
         with chart_col1:
             st.subheader("📌 議題生命週期：未解天數排行")
             
-            # 💡 網頁標註說明：讓客戶看懂顏色定義
             st.markdown("""
             **🎨 燈號顏色異常定義說明：**
             * 🔴 <span style='color:#ff4d4d; font-weight:bold;'>深紅燈 (>45天)</span>：高風險極具急迫性，嚴重卡關。
@@ -160,7 +158,7 @@ if uploaded_file is not None:
             * 🔵 <span style='color:#4da6ff; font-weight:bold;'>藍燈 (≤20天)</span>：正常時效內，進度持續追蹤中。
             """, unsafe_allow_html=True)
             
-            # 🔥【限定過濾】：只顯示有未解天數 ( > 0 ) 的項目
+            # 限定過濾：只顯示有未解天數 ( > 0 ) 的項目
             chart_df = filtered_df[filtered_df['未解天數'] > 0]
             
             if not chart_df.empty:
@@ -179,7 +177,11 @@ if uploaded_file is not None:
                     hovertext=sort_df['Summary']
                 ))
                 
-                # 💡 圖表內建附註 (Annotations)：確保圖片導出/截圖時也有圖例說明
+                # 🌟【關鍵 Bug 修正點 1】：強制將 Y 軸的資料型態鎖定為純字串分類 (Category)
+                # 這能阻止 Plotly 將長文字與特殊標點符號自動解析成「多層次階層」，讓橫條不再突起錯位。
+                fig_days.update_yaxes(type='category')
+                
+                # 圖表版面與內建圖例附註
                 fig_days.update_layout(
                     height=max(400, len(sort_df) * 25), 
                     margin=dict(l=10, r=50, t=20, b=60), 
@@ -213,7 +215,6 @@ if uploaded_file is not None:
 
         # 8. 異常 Highlight 區塊
         st.subheader("🚨 客戶核心關注：異常與紅燈風險項目 (Risk Highlighting)")
-        # 排除已完成項目
         risk_df = filtered_df[(filtered_df['風險監控'] != "✅ 正常追蹤中") & (filtered_df['Status'] != 'Done')]
 
         if not risk_df.empty:
@@ -251,7 +252,7 @@ else:
     # 引導用戶上傳檔案的 Welcome Page 介面
     st.title("🏭 美光機台異常議題追蹤與質量分析 Dashboard")
     st.markdown("---")
-    st.info("👋 歡迎使用專案動態追蹤大盤！目前系統處於等待數據狀態。")
+    st.info("👋 歡迎使用專案動態追蹤大盤！目前系統處於等待數據状態。")
     st.markdown("""
     ### 🚀 快速開始三步驟：
     1. **準備檔案**：自 Jira 匯出您最新的議題清單 CSV 檔。
