@@ -125,7 +125,7 @@ if uploaded_file is not None:
         ]
 
         # 5. 主面板頁面呈現
-        st.title("🏭 美光機台異常議題追蹤與質量分析 Dashboard")
+        st.title("🏭 美光機台異常議題追蹤與質量 analysis Dashboard")
         st.markdown(f"**📂 當前分析檔案：`{uploaded_file.name}`** ｜ 💡 數據分析基準日：{data_base_date.strftime('%Y/%m/%d')}")
         st.markdown("---")
 
@@ -164,13 +164,13 @@ if uploaded_file is not None:
             if not chart_df.empty:
                 sort_df = chart_df.sort_values(by='未解天數', ascending=True)
                 
-                # 🌟【唯一識別碼幕後生成】：在後台生成唯一 ID 用於繪圖，防止撞名
+                # 【唯一識別碼幕後生成】：確保撞名議題各自獨立
                 if 'Issue key' in sort_df.columns:
                     sort_df['Unique_ID'] = sort_df.apply(lambda r: f"{str(r['Issue key'])}##{str(r['Summary'])}", axis=1)
                 else:
                     sort_df['Unique_ID'] = [f"Idx_{i}##{str(text)}" for i, text in enumerate(sort_df['Summary'])]
                 
-                # 🌟【顯示文字幕後截斷】：單獨產出只顯示在 Y 軸的乾淨標題（截斷至前 22 個字防止破版）
+                # 【顯示文字幕後截斷】：Y軸顯示的純標題字串
                 sort_df['Display_Label'] = sort_df['Summary'].apply(lambda x: str(x)[:22] + "...")
                 
                 # 燈號顏色邏輯
@@ -178,35 +178,27 @@ if uploaded_file is not None:
                 
                 fig_days = go.Figure(go.Bar(
                     x=sort_df['未解天數'],
-                    y=sort_df['Unique_ID'], # 🚀 繪圖的坐標軸依然使用絕對唯一的 ID（確保不發生長條拼接 Bug）
+                    y=sort_df['Unique_ID'], 
                     orientation='h',
                     marker_color=colors,
                     text=sort_df['未解天數'].apply(lambda x: f" {x}天"),
                     textposition='outside',
-                    hovertext=sort_df['Summary'] # 滑鼠移上去能看到 100% 完整無截斷的乾淨主題
+                    hovertext=sort_df['Summary']
                 ))
                 
-                # 🌟【核心視覺優化】：強制將 Y 軸原本顯示的 Unique_ID 全數替換成 Display_Label
-                # 這樣圖表就不會顯示單號或 index 資訊，外觀上完全是整齊獨立的乾淨標題！
+                # 強制將 Y 軸替換成乾淨的 Display_Label，防止 Plotly 自動分層錯位
                 fig_days.update_yaxes(
                     type='category',
                     tickvals=sort_df['Unique_ID'],
                     ticktext=sort_df['Display_Label']
                 )
                 
-                # 圖表版面與內建圖例附註
+                # 🌟【完美去重優化點】：移除 annotations 重疊文字，並微調底部留白
                 fig_days.update_layout(
                     height=max(400, len(sort_df) * 25), 
-                    margin=dict(l=10, r=50, t=20, b=60), 
+                    margin=dict(l=10, r=50, t=20, b=30), # 底部留白調成舒適的 30px
                     yaxis=dict(autorange="reversed"),
-                    xaxis_title="未處理/未解天數 (Days)",
-                    annotations=[dict(
-                        text="圖表燈號說明: 🔴 >45天嚴重卡關 | 🟡 21-45天警告 | 🔵 ≤20天正常追蹤",
-                        showarrow=False,
-                        xref="paper", yref="paper",
-                        x=0, y=-0.1,
-                        font=dict(size=12, color="#555555")
-                    )]
+                    xaxis_title="未處理/未解天數 (Days)"
                 )
                 st.plotly_chart(fig_days, use_container_width=True)
             else:
