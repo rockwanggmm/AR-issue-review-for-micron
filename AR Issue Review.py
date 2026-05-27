@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 系統自訂樣式 CSS
+# 系統自訂樣式 CSS (用於網頁畫面上的排版美化)
 st.markdown("""
     <style>
     .highlight-red {
@@ -71,10 +71,10 @@ def process_uploaded_data(file):
     df['Updated'] = pd.to_datetime(df['Updated'], errors='coerce')
     df['Due date'] = pd.to_datetime(df['Due date'], errors='coerce')
     
-    # 【核心修正】：將「未解天數」強制轉為數字，文字（如 'done', '無立案日期'）會變成 NaN，隨後補 0
+    # 【未解天數清洗】：將非數字欄位（如 'done', '無立案日期'）轉為數字 0
     df['未解天數'] = pd.to_numeric(df['未解天數'], errors='coerce').fillna(0).astype(int)
     
-    # 建立客戶關注標籤 (動態掃描 Summary)
+    # 建立客戶關注標籤 (動態掃描 Summary 關鍵字)
     def classify_tag(summary):
         s_str = str(summary)
         if any(keyword in s_str for keyword in ['Top 5', 'Top項目', '新 Top', '關鍵']):
@@ -83,7 +83,7 @@ def process_uploaded_data(file):
     
     df['議題分類'] = df['Summary'].apply(classify_tag)
     
-    # 風險監控自動 Highlight 邏輯
+    # 風險監控自動 Highlight 邏輯 (以資料最新 Updated 時間為基準)
     base_date = df['Updated'].max() if df['Updated'].notnull().any() else datetime.now()
     
     def detect_risk(row):
@@ -137,7 +137,7 @@ if uploaded_file is not None:
             top_count = len(filtered_df[filtered_df['議題分類'] == "🔥 Top 核心議題"])
             st.metric(label="🔥 客戶關注 Top 項目", value=top_count)
         with col3:
-            # 算平均天數時，只計算有未解天數的議題
+            # 算平均天數時，只計算有未解天數（大於 0）的議題
             active_issues = filtered_df[filtered_df['未解天數'] > 0]
             avg_days = int(active_issues['未解天數'].mean()) if len(active_issues) > 0 else 0
             st.metric(label="⏳ 處理中議題平均未解天數", value=f"{avg_days} 天")
@@ -152,7 +152,7 @@ if uploaded_file is not None:
         with chart_col1:
             st.subheader("📌 議題生命週期：未解天數排行")
             
-            # 💡 新增給客戶看的顏色燈號定義說明（網頁元件標註）
+            # 💡 網頁標註說明：讓客戶看懂顏色定義
             st.markdown("""
             **🎨 燈號顏色異常定義說明：**
             * 🔴 <span style='color:#ff4d4d; font-weight:bold;'>深紅燈 (>45天)</span>：高風險極具急迫性，嚴重卡關。
@@ -160,18 +160,18 @@ if uploaded_file is not None:
             * 🔵 <span style='color:#4da6ff; font-weight:bold;'>藍燈 (≤20天)</span>：正常時效內，進度持續追蹤中。
             """, unsafe_allow_html=True)
             
-            # 過濾圖表，只顯示有未解天數 ( > 0 ) 的項目
+            # 🔥【限定過濾】：只顯示有未解天數 ( > 0 ) 的項目
             chart_df = filtered_df[filtered_df['未解天數'] > 0]
             
             if not chart_df.empty:
                 sort_df = chart_df.sort_values(by='未解天數', ascending=True)
                 
-                # 燈號顏色邏輯判定
+                # 燈號顏色邏輯
                 colors = ['#ff4d4d' if x > 45 else ('#ffaa00' if x > 20 else '#4da6ff') for x in sort_df['未解天數']]
                 
                 fig_days = go.Figure(go.Bar(
                     x=sort_df['未解天數'],
-                    y=sort_df['Summary'].apply(lambda x: str(x)[:22] + "..."), # 截斷字串防破版
+                    y=sort_df['Summary'].apply(lambda x: str(x)[:22] + "..."), 
                     orientation='h',
                     marker_color=colors,
                     text=sort_df['未解天數'].apply(lambda x: f" {x}天"),
@@ -179,17 +179,17 @@ if uploaded_file is not None:
                     hovertext=sort_df['Summary']
                 ))
                 
-                # 💡 在 Plotly 圖表下方也注入動態圖例文字說明，確保導出或截圖時依然保有定義
+                # 💡 圖表內建附註 (Annotations)：確保圖片導出/截圖時也有圖例說明
                 fig_days.update_layout(
-                    height=max(400, len(sort_df) * 25), # 根據項目多寡動態調整圖表高度
-                    margin=dict(l=10, r=50, t=20, b=50), 
+                    height=max(400, len(sort_df) * 25), 
+                    margin=dict(l=10, r=50, t=20, b=60), 
                     yaxis=dict(autorange="reversed"),
                     xaxis_title="未處理/未解天數 (Days)",
                     annotations=[dict(
                         text="圖表燈號說明: 🔴 >45天嚴重卡關 | 🟡 21-45天警告 | 🔵 ≤20天正常追蹤",
                         showarrow=False,
                         xref="paper", yref="paper",
-                        x=0, y=-0.1, # 靠左置於圖表底部
+                        x=0, y=-0.1,
                         font=dict(size=12, color="#555555")
                     )]
                 )
@@ -197,11 +197,23 @@ if uploaded_file is not None:
             else:
                 st.info("💡 目前篩選條件下，沒有正在卡關（有未解天數）的議題。")
 
+        with chart_col2:
+            st.subheader("📊 議題狀態與優先級交叉分析")
+            if not filtered_df.empty:
+                fig_status = px.histogram(
+                    filtered_df, x='Status', color='Priority', barmode='group',
+                    color_discrete_map={'P1': '#d9381e', 'P2': '#f28e2b', 'P3': '#4e79a7', 'P4': '#76b7b2'}
+                )
+                fig_status.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10))
+                st.plotly_chart(fig_status, use_container_width=True)
+            else:
+                st.info("暫無圖表數據。")
+
         st.markdown("---")
 
         # 8. 異常 Highlight 區塊
         st.subheader("🚨 客戶核心關注：異常與紅燈風險項目 (Risk Highlighting)")
-        # 排除已完成的項目，聚焦在真正有風險的 active 議題
+        # 排除已完成項目
         risk_df = filtered_df[(filtered_df['風險監控'] != "✅ 正常追蹤中") & (filtered_df['Status'] != 'Done')]
 
         if not risk_df.empty:
