@@ -152,11 +152,21 @@ if uploaded_file is not None:
         with chart_col1:
             st.subheader("📌 議題生命週期：未解天數排行")
             
-            # 🔥【優化重點】：過濾圖表，只顯示有未解天數 ( > 0 ) 的項目
+            # 💡 新增給客戶看的顏色燈號定義說明（網頁元件標註）
+            st.markdown("""
+            **🎨 燈號顏色異常定義說明：**
+            * 🔴 <span style='color:#ff4d4d; font-weight:bold;'>深紅燈 (>45天)</span>：高風險極具急迫性，嚴重卡關。
+            * 🟡 <span style='color:#ffaa00; font-weight:bold;'>黃燈 (21-45天)</span>：需注意並加強收斂，已出現滯留現象。
+            * 🔵 <span style='color:#4da6ff; font-weight:bold;'>藍燈 (≤20天)</span>：正常時效內，進度持續追蹤中。
+            """, unsafe_allow_html=True)
+            
+            # 過濾圖表，只顯示有未解天數 ( > 0 ) 的項目
             chart_df = filtered_df[filtered_df['未解天數'] > 0]
             
             if not chart_df.empty:
                 sort_df = chart_df.sort_values(by='未解天數', ascending=True)
+                
+                # 燈號顏色邏輯判定
                 colors = ['#ff4d4d' if x > 45 else ('#ffaa00' if x > 20 else '#4da6ff') for x in sort_df['未解天數']]
                 
                 fig_days = go.Figure(go.Bar(
@@ -168,26 +178,24 @@ if uploaded_file is not None:
                     textposition='outside',
                     hovertext=sort_df['Summary']
                 ))
+                
+                # 💡 在 Plotly 圖表下方也注入動態圖例文字說明，確保導出或截圖時依然保有定義
                 fig_days.update_layout(
-                    height=max(400, len(sort_df) * 25), # 根據項目多寡動態調整圖表高度，避免擠在一起
-                    margin=dict(l=10, r=40, t=10, b=10), 
-                    yaxis=dict(autorange="reversed")
+                    height=max(400, len(sort_df) * 25), # 根據項目多寡動態調整圖表高度
+                    margin=dict(l=10, r=50, t=20, b=50), 
+                    yaxis=dict(autorange="reversed"),
+                    xaxis_title="未處理/未解天數 (Days)",
+                    annotations=[dict(
+                        text="圖表燈號說明: 🔴 >45天嚴重卡關 | 🟡 21-45天警告 | 🔵 ≤20天正常追蹤",
+                        showarrow=False,
+                        xref="paper", yref="paper",
+                        x=0, y=-0.1, # 靠左置於圖表底部
+                        font=dict(size=12, color="#555555")
+                    )]
                 )
                 st.plotly_chart(fig_days, use_container_width=True)
             else:
                 st.info("💡 目前篩選條件下，沒有正在卡關（有未解天數）的議題。")
-
-        with chart_col2:
-            st.subheader("📊 議題狀態與優先級交叉分析")
-            if not filtered_df.empty:
-                fig_status = px.histogram(
-                    filtered_df, x='Status', color='Priority', barmode='group',
-                    color_discrete_map={'P1': '#d9381e', 'P2': '#f28e2b', 'P3': '#4e79a7', 'P4': '#76b7b2'}
-                )
-                fig_status.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10))
-                st.plotly_chart(fig_status, use_container_width=True)
-            else:
-                st.info("暫無圖表數據。")
 
         st.markdown("---")
 
