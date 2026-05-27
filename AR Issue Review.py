@@ -159,26 +159,33 @@ if uploaded_file is not None:
             """, unsafe_allow_html=True)
             
             # 限定過濾：只顯示有未解天數 ( > 0 ) 的項目
-            chart_df = filtered_df[filtered_df['未解天數'] > 0]
+            chart_df = filtered_df[filtered_df['未解天數'] > 0].copy()
             
             if not chart_df.empty:
                 sort_df = chart_df.sort_values(by='未解天數', ascending=True)
+                
+                # 🌟【最完美的 Bug 修正機制】：
+                # 如果資料裡有 'Issue key' 就用 Issue key 作為開頭，如果沒有，就用數字序號。
+                # 這樣能保證即便 Summary 前面 22 個字一模一樣，也會因為前綴不同而被 Plotly 視為獨立的長條！
+                if 'Issue key' in sort_df.columns:
+                    sort_df['Chart_Label'] = sort_df.apply(lambda r: f"[{str(r['Issue key'])}] {str(r['Summary'])[:20]}...", axis=1)
+                else:
+                    sort_df['Chart_Label'] = [f"[{i+1}] {str(text)[:20]}..." for i, text in enumerate(sort_df['Summary'])]
                 
                 # 燈號顏色邏輯
                 colors = ['#ff4d4d' if x > 45 else ('#ffaa00' if x > 20 else '#4da6ff') for x in sort_df['未解天數']]
                 
                 fig_days = go.Figure(go.Bar(
                     x=sort_df['未解天數'],
-                    y=sort_df['Summary'].apply(lambda x: str(x)[:22] + "..."), 
+                    y=sort_df['Chart_Label'], # 🌟 這裡換成有唯一前綴的標籤
                     orientation='h',
                     marker_color=colors,
                     text=sort_df['未解天數'].apply(lambda x: f" {x}天"),
                     textposition='outside',
-                    hovertext=sort_df['Summary']
+                    hovertext=sort_df['Summary'] # 滑鼠移上去依然可以看到 100% 完整無修改的名稱
                 ))
                 
-                # 🌟【關鍵 Bug 修正點 1】：強制將 Y 軸的資料型態鎖定為純字串分類 (Category)
-                # 這能阻止 Plotly 將長文字與特殊標點符號自動解析成「多層次階層」，讓橫條不再突起錯位。
+                # 強制將 Y 軸的資料型態鎖定為純字串分類
                 fig_days.update_yaxes(type='category')
                 
                 # 圖表版面與內建圖例附註
@@ -252,7 +259,7 @@ else:
     # 引導用戶上傳檔案的 Welcome Page 介面
     st.title("🏭 美光機台異常議題追蹤與質量分析 Dashboard")
     st.markdown("---")
-    st.info("👋 歡迎使用專案動態追蹤大盤！目前系統處於等待數據状態。")
+    st.info("👋 歡迎使用專案動態追蹤大盤！目前系統處於等待數據狀態。")
     st.markdown("""
     ### 🚀 快速開始三步驟：
     1. **準備檔案**：自 Jira 匯出您最新的議題清單 CSV 檔。
