@@ -31,6 +31,13 @@ st.markdown("""
         border-radius: 4px;
         font-size: 13px;
     }
+    .overdue-box {
+        border-left: 6px solid #cc0000;
+        background-color: #fff0f0;
+        padding: 15px;
+        margin-bottom: 12px;
+        border-radius: 6px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -125,7 +132,7 @@ if uploaded_file is not None:
         ]
 
         # 5. 主面板頁面呈現
-        st.title("🏭 美光機台異常議題追蹤與質量 analysis Dashboard")
+        st.title("🏭 美光機台異常議題追蹤與質量分析 Dashboard")
         st.markdown(f"**📂 當前分析檔案：`{uploaded_file.name}`** ｜ 💡 數據分析基準日：{data_base_date.strftime('%Y/%m/%d')}")
         st.markdown("---")
 
@@ -141,8 +148,13 @@ if uploaded_file is not None:
             avg_days = int(active_issues['未解天數'].mean()) if len(active_issues) > 0 else 0
             st.metric(label="⏳ 處理中議題平均未解天數", value=f"{avg_days} 天")
         with col4:
-            risk_count = len(filtered_df[(filtered_df['風險監控'] != "✅ 正常追蹤中") & (filtered_df['Status'] != 'Done')])
-            st.metric(label="⚠️ 紅燈異常警示項", value=risk_count)
+            # 統計過期且未結案的總數
+            total_overdue = len(filtered_df[
+                (filtered_df['Due date'].notnull()) & 
+                (filtered_df['Due date'] < data_base_date) & 
+                (~filtered_df['Status'].isin(['Done', 'Closed']))
+            ])
+            st.metric(label="🚨 逾期未完結項目 (Overdue)", value=f"{total_overdue} 項", delta_color="inverse")
 
         st.markdown("---")
 
@@ -155,25 +167,20 @@ if uploaded_file is not None:
             **🎨 燈號顏色異常定義說明：**
             * 🔴 <span style='color:#ff4d4d; font-weight:bold;'>深紅燈 (>45天)</span>：高風險極具急迫性，嚴重卡關。
             * 🟡 <span style='color:#ffaa00; font-weight:bold;'>黃燈 (21-45天)</span>：需注意並加強收斂，已出現滯留現象。
-            * 🔵 <span style='color:#4da6ff; font-weight:bold;'>藍燈 (≤20天)</span>：正常時效內，進度持續追蹤中。
+            * 🔵 <span style='color:#4da6ff; font-weight:bold;'>藍燈 (≤20天)</span>：正常時效內，進度持續追蹤中.
             """, unsafe_allow_html=True)
             
-            # 限定過濾：只顯示有未解天數 ( > 0 ) 的項目
             chart_df = filtered_df[filtered_df['未解天數'] > 0].copy()
             
             if not chart_df.empty:
                 sort_df = chart_df.sort_values(by='未解天數', ascending=True)
                 
-                # 【唯一識別碼幕後生成】：確保撞名議題各自獨立
                 if 'Issue key' in sort_df.columns:
                     sort_df['Unique_ID'] = sort_df.apply(lambda r: f"{str(r['Issue key'])}##{str(r['Summary'])}", axis=1)
                 else:
                     sort_df['Unique_ID'] = [f"Idx_{i}##{str(text)}" for i, text in enumerate(sort_df['Summary'])]
                 
-                # 【顯示文字幕後截斷】：Y軸顯示的純標題字串
                 sort_df['Display_Label'] = sort_df['Summary'].apply(lambda x: str(x)[:22] + "...")
-                
-                # 燈號顏色邏輯
                 colors = ['#ff4d4d' if x > 45 else ('#ffaa00' if x > 20 else '#4da6ff') for x in sort_df['未解天數']]
                 
                 fig_days = go.Figure(go.Bar(
@@ -186,17 +193,15 @@ if uploaded_file is not None:
                     hovertext=sort_df['Summary']
                 ))
                 
-                # 強制將 Y 軸替換成乾淨的 Display_Label，防止 Plotly 自動分層錯位
                 fig_days.update_yaxes(
                     type='category',
                     tickvals=sort_df['Unique_ID'],
                     ticktext=sort_df['Display_Label']
                 )
                 
-                # 🌟【完美去重優化點】：移除 annotations 重疊文字，並微調底部留白
                 fig_days.update_layout(
                     height=max(400, len(sort_df) * 25), 
-                    margin=dict(l=10, r=50, t=20, b=30), # 底部留白調成舒適的 30px
+                    margin=dict(l=10, r=50, t=20, b=30), 
                     yaxis=dict(autorange="reversed"),
                     xaxis_title="未處理/未解天數 (Days)"
                 )
@@ -218,8 +223,53 @@ if uploaded_file is not None:
 
         st.markdown("---")
 
-        # 8. 異常 Highlight 區塊
-        st.subheader("🚨 客戶核心關注：異常與紅燈風險項目 (Risk Highlighting)")
+        # 🌟 8. 新增區塊：【🚨 專案特快報表：Jira 承諾日期已逾期項目】
+        st.subheader("🚨 專案核心追蹤：承諾到期日 (Due date) 已逾期報表")
+        
+        # 核心篩選邏輯：有填 Due date 且 Due date 小於數據清洗基準日，且尚未 Close/Done
+        overdue_df = filtered_df[
+            (filtered_df['Due date'].notnull()) & 
+            (filtered_df['Due date'] < data_base_date) & 
+            (~filtered_df['Status'].isin(['Done', 'Closed']))
+        ].copy()
+
+        if not overdue_df.empty:
+            # 計算每筆議題具體過期了幾天，並由大到小排序
+            overdue_df['逾期天數'] = (data_base_date - overdue_df['Due date']).dt.days
+            overdue_df = overdue_df.sort_values(by='逾期天數', ascending=False)
+            
+            st.markdown(f"⚠️ 以下共列出 **{len(overdue_df)}** 項已超過預定交付日（Due date）卻未完結的異常，請專案經理與負責人盡速更新狀態或確認排程：")
+            
+            # 建立美觀明瞭的清單元件
+            for idx, row in overdue_df.iterrows():
+                issue_key_str = f"【{row['Issue key']}】" if 'Issue key' in row and pd.notnull(row['Issue key']) else ""
+                st.markdown(f"""
+                <div class="overdue-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 15px; color: #cc0000; font-weight: bold;">
+                            ⏳ 已延誤 {row['逾期天數']} 天
+                        </span>
+                        <span style="background-color: #cc0000; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+                            {row['Priority']}
+                        </span>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 15px; color: #111;">
+                        <strong>{issue_key_str}{row['Summary']}</strong>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 13px; color: #555;">
+                        👤 負責人：<b style="color:#111;">{row['Assignee'] if pd.notnull(row['Assignee']) else '❌ 尚未分派負責 R&D'}</b> ｜ 
+                        ⚙️ 目前狀態：<b>{row['Status']}</b> ｜ 
+                        📅 原定承諾日：<span style="color:#cc0000; font-weight:bold;">{row['Due date'].strftime('%Y/%m/%d')}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.success("🎉 太棒了！目前沒有任何已逾期卻未完結的專案項目，進度控制良好。")
+
+        st.markdown("---")
+
+        # 9. 異常 Highlight 區塊 (原有的紅燈風險監控)
+        st.subheader("⚠️ 系統自動掃描：其他異常與紅燈風險項目 (Risk Highlighting)")
         risk_df = filtered_df[(filtered_df['風險監控'] != "✅ 正常追蹤中") & (filtered_df['Status'] != 'Done')]
 
         if not risk_df.empty:
@@ -243,7 +293,7 @@ if uploaded_file is not None:
 
         st.markdown("---")
 
-        # 9. 明細資料表格
+        # 10. 明細資料表格
         st.subheader("📋 專案全議題全圖譜明細")
         display_df = filtered_df[['議題分類', 'Priority', 'Status', 'Summary', 'Assignee', '未解天數', 'Due date', '風險監控']].copy()
         display_df['Due date'] = display_df['Due date'].apply(lambda x: x.strftime('%Y/%m/%d') if pd.notnull(x) else '未定')
