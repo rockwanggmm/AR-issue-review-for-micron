@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, date
 
 # 1. 網頁基礎設定 (寬螢幕模式與科技感主題)
 st.set_page_config(
@@ -115,6 +115,7 @@ if uploaded_file is not None:
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔍 步驟 2：篩選大盤資料")
         
+        # 原有基本篩選
         all_priorities = sorted(df['Priority'].dropna().unique().tolist())
         selected_priorities = st.sidebar.multiselect("議題優先級 (Priority)", all_priorities, default=all_priorities)
 
@@ -124,12 +125,69 @@ if uploaded_file is not None:
         all_tags = df['議題分類'].unique().tolist()
         selected_tags = st.sidebar.multiselect("群組分類", all_tags, default=all_tags)
 
-        # 執行篩選
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🎯 步驟 3：進階條件篩選")
+
+        # 🌟 功能 1：有無超過 Due date 篩選
+        overdue_filter = st.sidebar.radio(
+            "1. 有無超過 Due date",
+            options=["全部", "🚨 已逾期 (Overdue)", "📅 未逾期/未定時效"],
+            index=0,
+            help="已逾期定義：到期日小於基準日且尚未結案"
+        )
+
+        # 🌟 功能 2：時間區間 (依據 Created 建立日期)
+        st.sidebar.markdown("**2. 立案時間區間 (Created Date)**")
+        min_date = df['Created'].min().date() if df['Created'].notnull().any() else date(2025, 1, 1)
+        max_date = df['Created'].max().date() if df['Created'].notnull().any() else date.today()
+        
+        start_date = st.sidebar.date_input("開始日期", min_date, min_value=min_date, max_value=max_date)
+        end_date = st.sidebar.date_input("結束日期", max_date, min_value=min_date, max_value=max_date)
+
+        # 🌟 功能 3：有無異常篩選
+        risk_filter = st.sidebar.radio(
+            "3. 異常風險狀態",
+            options=["全部", "⚠️ 僅看異常警示項", "✅ 僅看正常追蹤項"],
+            index=0,
+            help="異常包含：已逾期、未指派人員、未解天數>45天之項目"
+        )
+
+        # 【執行多重動態篩選邏輯】
+        # A. 基本篩選
         filtered_df = df[
             (df['Priority'].isin(selected_priorities)) & 
             (df['Status'].isin(selected_statuses)) &
             (df['議題分類'].isin(selected_tags))
-        ]
+        ].copy()
+
+        # B. 執行時間區間篩選 (Created Date)
+        if filtered_df['Created'].notnull().any():
+            filtered_df = filtered_df[
+                (filtered_df['Created'].dt.date >= start_date) & 
+                (filtered_df['Created'].dt.date <= end_date)
+            ]
+
+        # C. 執行有無超過 Due date 篩選
+        if overdue_filter == "🚨 已逾期 (Overdue)":
+            filtered_df = filtered_df[
+                (filtered_df['Due date'].notnull()) & 
+                (filtered_df['Due date'] < data_base_date) & 
+                (~filtered_df['Status'].isin(['Done', 'Closed']))
+            ]
+        elif overdue_filter == "📅 未逾期/未定時效":
+            # 未過期狀況：沒有填 Due date，或者是 Due date 還沒到，或者已經 Done/Closed 了
+            filtered_df = filtered_df[
+                (filtered_df['Due date'].isna()) | 
+                (filtered_df['Due date'] >= data_base_date) | 
+                (filtered_df['Status'].isin(['Done', 'Closed']))
+            ]
+
+        # D. 執行有無異常篩選
+        if risk_filter == "⚠️ 僅看異常警示項":
+            filtered_df = filtered_df[filtered_df['風險監控'] != "✅ 正常追蹤中"]
+        elif risk_filter == "✅ 僅看正常追蹤項":
+            filtered_df = filtered_df[filtered_df['風險監控'] == "✅ 正常追蹤中"]
+
 
         # 5. 主面板頁面呈現
         st.title("🏭 美光機台異常議題追蹤與質量分析 Dashboard")
@@ -148,13 +206,12 @@ if uploaded_file is not None:
             avg_days = int(active_issues['未解天數'].mean()) if len(active_issues) > 0 else 0
             st.metric(label="⏳ 處理中議題平均未解天數", value=f"{avg_days} 天")
         with col4:
-            # 統計過期且未結案的總數
             total_overdue = len(filtered_df[
                 (filtered_df['Due date'].notnull()) & 
                 (filtered_df['Due date'] < data_base_date) & 
                 (~filtered_df['Status'].isin(['Done', 'Closed']))
             ])
-            st.metric(label="🚨 逾期未完結項目 (Overdue)", value=f"{total_overdue} 項", delta_color="inverse")
+            st.metric(label="🚨 篩選範圍內逾期項", value=f"{total_overdue} 項")
 
         st.markdown("---")
 
@@ -167,7 +224,7 @@ if uploaded_file is not None:
             **🎨 燈號顏色異常定義說明：**
             * 🔴 <span style='color:#ff4d4d; font-weight:bold;'>深紅燈 (>45天)</span>：高風險極具急迫性，嚴重卡關。
             * 🟡 <span style='color:#ffaa00; font-weight:bold;'>黃燈 (21-45天)</span>：需注意並加強收斂，已出現滯留現象。
-            * 🔵 <span style='color:#4da6ff; font-weight:bold;'>藍燈 (≤20天)</span>：正常時效內，進度持續追蹤中.
+            * 🔵 <span style='color:#4da6ff; font-weight:bold;'>藍燈 (≤20天)</span>：正常時效內，進度持續追蹤中。
             """, unsafe_allow_html=True)
             
             chart_df = filtered_df[filtered_df['未解天數'] > 0].copy()
@@ -223,10 +280,9 @@ if uploaded_file is not None:
 
         st.markdown("---")
 
-        # 🌟 8. 新增區塊：【🚨 專案特快報表：Jira 承諾日期已逾期項目】
+        # 8. 專案特快報表：Jira 承諾日期已逾期項目
         st.subheader("🚨 專案核心追蹤：承諾到期日 (Due date) 已逾期報表")
         
-        # 核心篩選邏輯：有填 Due date 且 Due date 小於數據清洗基準日，且尚未 Close/Done
         overdue_df = filtered_df[
             (filtered_df['Due date'].notnull()) & 
             (filtered_df['Due date'] < data_base_date) & 
@@ -234,13 +290,11 @@ if uploaded_file is not None:
         ].copy()
 
         if not overdue_df.empty:
-            # 計算每筆議題具體過期了幾天，並由大到小排序
             overdue_df['逾期天數'] = (data_base_date - overdue_df['Due date']).dt.days
             overdue_df = overdue_df.sort_values(by='逾期天數', ascending=False)
             
-            st.markdown(f"⚠️ 以下共列出 **{len(overdue_df)}** 項已超過預定交付日（Due date）卻未完結的異常，請專案經理與負責人盡速更新狀態或確認排程：")
+            st.markdown(f"⚠️ 以下共列出 **{len(overdue_df)}** 項已超過預定交付日卻未完結的異常：")
             
-            # 建立美觀明瞭的清單元件
             for idx, row in overdue_df.iterrows():
                 issue_key_str = f"【{row['Issue key']}】" if 'Issue key' in row and pd.notnull(row['Issue key']) else ""
                 st.markdown(f"""
@@ -264,7 +318,7 @@ if uploaded_file is not None:
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.success("🎉 太棒了！目前沒有任何已逾期卻未完結的專案項目，進度控制良好。")
+            st.success("🎉 太棒了！當前篩選範圍內沒有任何已逾期卻未完結的專案項目。")
 
         st.markdown("---")
 
